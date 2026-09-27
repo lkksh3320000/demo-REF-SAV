@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>鬼谷倖存者 (完整擴充版)</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #111; overflow: hidden; font-family: sans-serif; touch-action: none; user-select: none; }
+        canvas { display: block; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: none; }
+        .bar-container { position: absolute; top: 10px; left: 10px; width: calc(100% - 70px); height: 20px; background: #333; border: 2px solid #555; border-radius: 10px; overflow: hidden; }
+        #exp-bar { width: 0%; height: 100%; background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%); transition: width 0.2s; }
+        .stats { position: absolute; top: 40px; left: 15px; color: white; text-shadow: 1px 1px 2px black; font-size: 14px; line-height: 1.5; }
+        #timer { position: absolute; top: 40px; right: 15px; color: white; font-size: 18px; font-weight: bold; text-shadow: 1px 1px 2px black; }
+        
+        .btn { pointer-events: auto; background: rgba(0,0,0,0.8); color: #c9a562; border: 1px solid #c9a562; padding: 8px 18px; border-radius: 5px; cursor: pointer; font-weight: bold; margin: 5px; transition: 0.2s; display: inline-block; }
+        .btn:hover { background: #c9a562; color: #000; }
+        #pause-btn { position: absolute; top: 5px; right: 10px; z-index: 50; }
+
+        #joystick-zone { position: absolute; bottom: 10%; left: 10%; width: 120px; height: 120px; pointer-events: auto; display: none; }
+        #joystick-base { width: 100%; height: 100%; background: rgba(255, 255, 255, 0.2); border-radius: 50%; position: relative; }
+        #joystick-stick { width: 40px; height: 40px; background: rgba(255, 255, 255, 0.5); border-radius: 50%; position: absolute; top: 40px; left: 40px; }
+        
+        .modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10, 10, 10, 0.95); border: 2px solid #c9a562; padding: 20px; border-radius: 10px; color: white; text-align: center; pointer-events: auto; width: 85%; max-width: 450px; z-index: 100; max-height: 85vh; overflow-y: auto; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        .card { background: #222; border: 1px solid #555; padding: 10px; margin: 8px 0; border-radius: 5px; cursor: pointer; transition: 0.2s; position: relative;}
+        .card:hover { border-color: #c9a562; background: #333; }
+        .card-title { font-weight: bold; font-size: 16px; color: #f1c40f; }
+        .affix-high { border-color: #e74c3c; box-shadow: inset 0 0 10px rgba(231,76,60,0.2); }
+        .affix-high .card-title { color: #ff7675; }
+        
+        .mode-btn { width: 100%; box-sizing: border-box; margin: 5px 0; font-size: 16px; }
+        #damage-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(255,0,0,0.3); pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 40;}
+        
+        @media (hover: none) and (pointer: coarse) { #joystick-zone { display: block; } }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="damage-overlay"></div>
+    <div id="ui-layer">
+        <div class="bar-container"><div id="exp-bar"></div></div>
+        <button id="pause-btn" class="btn" onclick="togglePause()">暫停</button>
+        <div class="stats" id="stats-display">境界: 練氣 1 層<br>靈石: 0<br>擊殺: 0</div>
+        <div id="timer">00:00</div>
+        <div id="joystick-zone"><div id="joystick-base"><div id="joystick-stick"></div></div></div>
+    </div>
+
+    <!-- Start Modal -->
+    <div id="start-modal" class="modal" style="display: block;">
+        <h1 style="color: #c9a562; margin-top: 0;">鬼谷倖存者</h1>
+        <p style="color: #aaa; font-size: 14px;">WASD 或 虛擬搖桿移動自動攻擊</p>
+        <hr style="border-color: #333;">
+        <button class="btn mode-btn" onclick="startGame(300)">切磋模式 (5 分鐘) - 適合快速體驗</button>
+        <button class="btn mode-btn" onclick="startGame(600)">歷練模式 (10 分鐘) - 標準修行</button>
+        <button class="btn mode-btn" onclick="startGame(900)">生死模式 (15 分鐘) - 極限挑戰</button>
+        <button class="btn mode-btn" onclick="openShop('start')" style="background: #8e44ad; color: white;">進入聚寶閣</button>
+    </div>
+
+    <!-- Level Up Modal (4 Options) -->
+    <div id="levelup-modal" class="modal">
+        <h2 style="color: #c9a562;">境界突破</h2>
+        <p>選擇一項功法參悟：</p>
+        <div id="upgrade-options"></div>
+    </div>
+    
+    <!-- Chest Modal -->
+    <div id="chest-modal" class="modal">
+        <h2 style="color: #f1c40f;">機緣降臨！</h2>
+        <p>你開啟了宗門寶箱，獲得：</p>
+        <div id="chest-reward" style="font-size: 20px; font-weight: bold; color: #00f2fe; margin: 20px 0;"></div>
+        <button class="btn" onclick="closeChest()">收下並繼續</button>
+    </div>
+
+    <div id="gameover-modal" class="modal">
+        <h2 id="go-title" style="color: #e74c3c;">道死身消</h2>
+        <p id="go-stats"></p>
+        <button class="btn" onclick="location.reload()">輪迴重修 (首頁)</button>
+        <button class="btn" onclick="openShop('gameover')" style="background: #8e44ad; color: white;">聚寶閣 (商店)</button>
+    </div>
+
+    <div id="pause-modal" class="modal">
+        <h2 style="color: #c9a562;">修行暫停</h2>
+        <p>目前總靈石: <span id="pause-stones">0</span></p>
+        <button class="btn" onclick="togglePause()">繼續修行</button>
+        <button class="btn" onclick="openShop('pause')" style="background: #8e44ad; color: white;">聚寶閣 (商店)</button>
+        <button class="btn" onclick="location.reload()" style="border-color: #e74c3c; color: #e74c3c;">放棄本次輪迴</button>
+    </div>
+
+    <!-- Tiered Shop Modal -->
+    <div id="shop-modal" class="modal">
+        <h2 style="color: #c9a562;">聚寶閣</h2>
+        <p>持有靈石: <span id="shop-stones">0</span></p>
+        <div id="shop-items" style="text-align: left; max-height: 400px; overflow-y:auto; padding-right:10px;"></div>
+        <button class="btn" onclick="closeShop()" style="margin-top: 15px;">返回</button>
+    </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const UI = {
+    layer: document.getElementById('ui-layer'), expBar: document.getElementById('exp-bar'),
+    stats: document.getElementById('stats-display'), timer: document.getElementById('timer'),
+    startModal: document.getElementById('start-modal'), levelUpModal: document.getElementById('levelup-modal'),
+    optionsContainer: document.getElementById('upgrade-options'), chestModal: document.getElementById('chest-modal'),
+    gameOverModal: document.getElementById('gameover-modal'), pauseModal: document.getElementById('pause-modal'),
+    shopModal: document.getElementById('shop-modal'), dmgOverlay: document.getElementById('damage-overlay'),
+    joyBase: document.getElementById('joystick-base'), joyStick: document.getElementById('joystick-stick')
+};
+
+// 系統與存檔設定
+let rawData = localStorage.getItem('guigu_save_v2');
+let metaData = rawData ? JSON.parse(rawData) : {
+    spiritStones: 0, hpBonus: 0, atkBonus: 0, startMagnet: false, startAoe: false, revives: 0
+};
+let sessionStones = 0, sessionRevives = 0;
+let shopReturnTo = 'start'; 
+
+const shopCatalog = [
+    { id: 'hp', name: '洗髓丹 (初階)', desc: '永久氣血+20', cost: 15, max: 20 },
+    { id: 'atk', name: '聚氣散 (初階)', desc: '永久攻擊+5', cost: 20, max: 20 },
+    { id: 'magnet', name: '聚靈玉 (中階)', desc: '拾取範圍永久 +50', cost: 100, max: 3 },
+    { id: 'aoe', name: '天道築基 (高階)', desc: '開局自帶八卦劍陣', cost: 500, max: 1 },
+    { id: 'revive', name: '九轉還魂丹 (頂級)', desc: '單局免死復活 1 次', cost: 2000, max: 1 }
+];
+
+let gameState = { isRunning: false, time: 0, maxTime: 300, kills: 0, lastTime: 0, camera: { x: 0, y: 0 }, spawns: {} };
+let player, enemies = [], projectiles = [], drops = [], floatTexts = [], aoeEffects = [];
+let input = { x: 0, y: 0 }, spawnerTimer = 0;
+
+// 【實體類別】
+class Player {
+    constructor() {
+        this.x = 0; this.y = 0; this.radius = 15; this.speed = 160; 
+        this.maxHp = 100 + (metaData.hpBonus * 20); this.hp = this.maxHp;
+        this.level = 1; this.exp = 0; this.maxExp = 50;
+        let baseAtk = metaData.atkBonus * 5;
+        this.weapons = [{ name: '清風劍氣', type: 'projectile', level: 1, damage: 15 + baseAtk, cooldown: 1.0, timer: 0, element: 'normal', pierce: 1 }];
+        if(metaData.startAoe) this.weapons.push({ name: '八卦劍陣', type: 'aoe', level: 1, damage: 20 + baseAtk, cooldown: 3.0, radius: 120, timer: 0 });
+        this.pickupRadius = 60 + (metaData.startMagnet ? metaData.startMagnet * 50 : 0);
+        this.magnetTimer = 0; // 用於炸彈或道具觸發的全圖吸鐵
+    }
+    update(dt, input) {
+        if(input.x !== 0 || input.y !== 0) {
+            let len = Math.hypot(input.x, input.y);
+            this.x += (input.x / len) * this.speed * dt; this.y += (input.y / len) * this.speed * dt;
+        }
+        gameState.camera.x = this.x - canvas.width / 2; gameState.camera.y = this.y - canvas.height / 2;
+        
+        if (this.magnetTimer > 0) this.magnetTimer -= dt;
+
+        this.weapons.forEach(w => {
+            w.timer -= dt;
+            if(w.timer <= 0) {
+                if (w.type === 'projectile') { if (this.fireProjectile(w)) w.timer = Math.max(0.15, w.cooldown); } 
+                else if (w.type === 'aoe') { this.fireAoe(w); w.timer = Math.max(1.0, w.cooldown); }
+            }
+        });
+    }
+    fireProjectile(w) {
+        if(enemies.length === 0) return false;
+        let closest = enemies.reduce((c, e) => { let d = Math.hypot(this.x - e.x, this.y - e.y); return d < c.d ? {e: e, d: d} : c; }, {e: null, d: Infinity});
+        if (closest.e && closest.d < 500) {
+            let dx = closest.e.x - this.x; let dy = closest.e.y - this.y; let len = Math.hypot(dx, dy);
+            projectiles.push(new Projectile(this.x, this.y, dx/len, dy/len, w.damage, w.name, w.element, w.pierce));
+            return true;
+        }
+        return false;
+    }
+    fireAoe(w) {
+        let r = w.radius + (w.level * 10);
+        aoeEffects.push(new AoeEffect(this.x, this.y, r));
+        enemies.forEach(e => { if(Math.hypot(this.x - e.x, this.y - e.y) <= r + e.radius) e.takeDamage(w.damage); });
+    }
+    gainExp(amt) {
+        this.exp += amt;
+        if(this.exp >= this.maxExp) {
+            this.exp -= this.maxExp; this.level++; this.maxExp = Math.floor(this.maxExp * 1.5);
+            triggerLevelUp();
+        }
+        UI.expBar.style.width = `${(this.exp / this.maxExp) * 100}%`;
+    }
+}
+
+class Enemy {
+    constructor(x, y, type) {
+        this.x = x; this.y = y; this.type = type; this.markedForDeath = false; this.attackCooldown = 0;
+        this.status = { burn: 0, burnTick: 0, freeze: 0 }; // 元素狀態機
+        
+        let diff = 1 + (gameState.time / 60) * 1.2; 
+        switch(type) {
+            case 'boss_tian': this.maxHp = 999999; this.speed = 350; this.radius = 40; this.damage = 9999; this.color = '#9b59b6'; break; // 天劫
+            case 'boss': this.maxHp = 4000 * diff; this.speed = 70; this.radius = 35; this.damage = 40; this.color = '#f1c40f'; break;
+            case 'elite': this.maxHp = 1000 * diff; this.speed = 95; this.radius = 25; this.damage = 25; this.color = '#e67e22'; break;
+            default: this.maxHp = 30 * diff; this.speed = 50 + (Math.random()*25); this.radius = 12; this.damage = 10; this.color = '#2ecc71';
+        }
+        this.hp = this.maxHp;
+    }
+    update(dt) {
+        // 狀態機運算
+        let currentSpeed = this.speed;
+        if (this.status.freeze > 0) { this.status.freeze -= dt; currentSpeed *= 0.4; } // 緩速 60%
+        if (this.status.burn > 0) { 
+            this.status.burn -= dt; this.status.burnTick -= dt;
+            if(this.status.burnTick <= 0) { this.takeDamage(15); this.status.burnTick = 0.5; }
+        }
+
+        let dx = player.x - this.x; let dy = player.y - this.y; let len = Math.hypot(dx, dy);
+        if(len > 0) { this.x += (dx/len) * currentSpeed * dt; this.y += (dy/len) * currentSpeed * dt; }
+        
+        if (this.attackCooldown > 0) this.attackCooldown -= dt;
+        if (len < this.radius + player.radius && this.attackCooldown <= 0) {
+            takePlayerDamage(this.damage);
+            this.attackCooldown = 1.0;
+        }
+    }
+    takeDamage(dmg) {
+        this.hp -= dmg;
+        floatTexts.push(new FloatText(this.x, this.y - 20, Math.floor(dmg), '#fff'));
+        if(this.hp <= 0 && !this.markedForDeath) {
+            this.markedForDeath = true; gameState.kills++;
+            let isBoss = this.type === 'boss'; let isElite = this.type === 'elite';
+            
+            // 多樣化掉落判定
+            if (isBoss) drops.push(new Drop(this.x, this.y, 'chest'));
+            else if (isElite) drops.push(new Drop(this.x, this.y, 'magnet'));
+            else {
+                let r = Math.random();
+                if (r < 0.01) drops.push(new Drop(this.x, this.y, 'bomb'));
+                else if (r < 0.03) drops.push(new Drop(this.x, this.y, 'heal'));
+                else drops.push(new Drop(this.x, this.y, 'exp', 5 + (gameState.time/60)*2));
+            }
+            if (isBoss || isElite) sessionStones += Math.floor(Math.random()*5)+2;
+            else if (Math.random() < 0.08) sessionStones++;
+        }
+    }
+    applyElement(el) {
+        if (el === 'fire') this.status.burn = 3.0; // 燒3秒
+        else if (el === 'ice') this.status.freeze = 2.0; // 緩2秒
+    }
+}
+
+class Projectile {
+    constructor(x, y, vx, vy, dmg, name, el, pierce) {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+        this.speed = 450; this.damage = dmg; this.life = 2.0; this.markedForDeath = false;
+        this.element = el; this.pierce = pierce || 1; this.hitTargets = [];
+        this.isTracking = name === '萬劍歸宗';
+        if(el === 'fire') this.color = '#ff4757'; else if(el === 'ice') this.color = '#74b9ff'; else this.color = '#00ffff';
+    }
+    update(dt) {
+        if (this.isTracking && enemies.length > 0) {
+            let closest = enemies.reduce((c, e) => { let d = Math.hypot(this.x - e.x, this.y - e.y); return d < c.d ? {e: e, d: d} : c; }, {e: null, d: Infinity});
+            if (closest.e) {
+                let dx = closest.e.x - this.x; let dy = closest.e.y - this.y; let len = Math.hypot(dx, dy);
+                this.vx += (dx/len) * 5 * dt; this.vy += (dy/len) * 5 * dt; // 轉向
+                let nLen = Math.hypot(this.vx, this.vy); this.vx /= nLen; this.vy /= nLen;
+            }
+        }
+        this.x += this.vx * this.speed * dt; this.y += this.vy * this.speed * dt;
+        this.life -= dt; if(this.life <= 0) this.markedForDeath = true;
+
+        for(let e of enemies) {
+            if(Math.hypot(this.x - e.x, this.y - e.y) < e.radius + 8 && !this.hitTargets.includes(e)) {
+                e.takeDamage(this.damage);
+                if (this.element !== 'normal') e.applyElement(this.element);
+                this.hitTargets.push(e); this.pierce--;
+                if(this.pierce <= 0) { this.markedForDeath = true; break; }
+            }
+        }
+    }
+}
+
+class AoeEffect {
+    constructor(x, y, radius) { this.x = x; this.y = y; this.maxRadius = radius; this.radius = 0; this.life = 0.3; this.markedForDeath = false; }
+    update(dt) { this.radius += (this.maxRadius - this.radius) * 12 * dt; this.life -= dt; if(this.life <= 0) this.markedForDeath = true; }
+    draw(ctx, cam) {
+        ctx.strokeStyle = `rgba(241, 196, 15, ${this.life * 3})`; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(this.x - cam.x, this.y - cam.y, this.radius, 0, Math.PI*2); ctx.stroke();
+    }
+}
+
+class Drop {
+    constructor(x, y, type, expVal=0) {
+        this.x = x; this.y = y; this.type = type; this.exp = expVal; this.markedForDeath = false;
+        switch(type) {
+            case 'heal': this.color = '#2ecc71'; this.radius = 6; break;
+            case 'bomb': this.color = '#000'; this.radius = 8; break;
+            case 'magnet': this.color = '#9b59b6'; this.radius = 6; break;
+            case 'chest': this.color = '#f1c40f'; this.radius = 12; break;
+            default: this.color = expVal > 20 ? '#e74c3c' : '#00f2fe'; this.radius = expVal > 20 ? 8 : 4;
+        }
+    }
+    update(dt) {
+        let dist = Math.hypot(player.x - this.x, player.y - this.y);
+        let pullDist = player.magnetTimer > 0 ? 2000 : player.pickupRadius; // 全圖吸鐵
+        if(dist < pullDist) {
+            this.x += ((player.x - this.x)/dist) * 450 * dt; this.y += ((player.y - this.y)/dist) * 450 * dt;
+            if(dist < 15) {
+                this.markedForDeath = true;
+                switch(this.type) {
+                    case 'heal': player.hp = Math.min(player.hp + player.maxHp*0.2, player.maxHp); floatTexts.push(new FloatText(player.x, player.y, "+HP", '#2ecc71')); break;
+                    case 'bomb': enemies.forEach(e => e.takeDamage(9999)); floatTexts.push(new FloatText(player.x, player.y, "天雷炸裂!", '#fff')); break;
+                    case 'magnet': player.magnetTimer = 0.5; floatTexts.push(new FloatText(player.x, player.y, "萬物聚靈!", '#9b59b6')); break;
+                    case 'chest': triggerChest(); break;
+                    default: player.gainExp(this.exp);
+                }
+            }
+        }
+    }
+    draw(ctx, cam) {
+        ctx.fillStyle = this.color; ctx.beginPath(); 
+        if(this.type === 'bomb') { ctx.arc(this.x-cam.x, this.y-cam.y, this.radius, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle='red'; ctx.stroke(); }
+        else if(this.type === 'chest') { ctx.fillRect(this.x-cam.x-this.radius, this.y-cam.y-this.radius*0.8, this.radius*2, this.radius*1.6); }
+        else { ctx.arc(this.x-cam.x, this.y-cam.y, this.radius, 0, Math.PI*2); ctx.fill(); }
+    }
+}
+
+class FloatText {
+    constructor(x, y, text, color='#fff') { this.x = x; this.y = y; this.text = text; this.life = 0.8; this.color = color; this.markedForDeath = false; }
+    update(dt) { this.y -= 30 * dt; this.life -= dt; if(this.life <= 0) this.markedForDeath = true; }
+}
+
+// 【系統控制與主迴圈】
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if(e.key === 'escape' && gameState.isRunning) togglePause(); });
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+let joyActive = false, joyCenter = {x: 0, y: 0};
+UI.joyBase.addEventListener('touchstart', e => { e.preventDefault(); joyActive = true; let rect = UI.joyBase.getBoundingClientRect(); joyCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 }; handleJoy(e.touches[0]); }, {passive:false});
+UI.joyBase.addEventListener('touchmove', e => { e.preventDefault(); if(joyActive) handleJoy(e.touches[0]); }, {passive:false});
+window.addEventListener('touchend', () => { joyActive = false; input.x = 0; input.y = 0; UI.joyStick.style.transform = `translate(0px, 0px)`; });
+
+function handleJoy(t) {
+    let dx = t.clientX - joyCenter.x; let dy = t.clientY - joyCenter.y; let len = Math.hypot(dx, dy); let maxDist = 40;
+    if(len > maxDist) { dx = (dx/len)*maxDist; dy = (dy/len)*maxDist; }
+    UI.joyStick.style.transform = `translate(${dx}px, ${dy}px)`; input.x = dx / maxDist; input.y = dy / maxDist;
+}
+
+function startGame(timeLimit) {
+    gameState.maxTime = timeLimit; gameState.spawns = {};
+    sessionRevives = metaData.revives || 0; 
+    UI.startModal.style.display = 'none'; UI.layer.style.display = 'block';
+    player = new Player();
+    gameState.lastTime = performance.now(); gameState.isRunning = true;
+    requestAnimationFrame(update);
+}
+
+function update() {
+    if(!gameState.isRunning) return;
+    let now = performance.now(); let dt = (now - gameState.lastTime) / 1000; if(dt > 0.1) dt = 0.1; 
+    gameState.lastTime = now; gameState.time += dt;
+
+    if(keys['w'] || keys['arrowup']) input.y = -1; else if(keys['s'] || keys['arrowdown']) input.y = 1;
+    if(keys['a'] || keys['arrowleft']) input.x = -1; else if(keys['d'] || keys['arrowright']) input.x = 1;
+
+    player.update(dt, input);
+    
+    // 生成邏輯 (基於百分比)
+    spawnerTimer += dt;
+    let pct = gameState.time / gameState.maxTime;
+    let spawnRate = Math.max(0.2, 1.0 - (pct * 0.8)); // 隨進度加快
+    let r = Math.max(canvas.width, canvas.height) / 2 + 50; 
+
+    const spawnEvent = (id, type) => {
+        if(!gameState.spawns[id]) {
+            gameState.spawns[id] = true;
+            let ang = Math.random() * Math.PI * 2; enemies.push(new Enemy(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r, type));
+        }
+    };
+
+    if (pct >= 1.0) spawnEvent('tian', 'boss_tian'); // 天道
+    else if (pct >= 0.9) spawnEvent('boss2', 'boss');
+    else if (pct >= 0.6) spawnEvent('elite2', 'elite');
+    else if (pct >= 0.4) spawnEvent('boss1', 'boss');
+    else if (pct >= 0.2) spawnEvent('elite1', 'elite');
+    
+    if (spawnerTimer > spawnRate && enemies.length < 250 && pct < 1.0) {
+        spawnerTimer = 0; let ang = Math.random() * Math.PI * 2; enemies.push(new Enemy(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r, 'normal'));
+    }
+
+    projectiles.forEach(p => p.update(dt)); projectiles = projectiles.filter(p => !p.markedForDeath);
+    aoeEffects.forEach(a => a.update(dt)); aoeEffects = aoeEffects.filter(a => !a.markedForDeath);
+    enemies.forEach(e => e.update(dt)); enemies = enemies.filter(e => !e.markedForDeath);
+    drops.forEach(d => d.update(dt)); drops = drops.filter(d => !d.markedForDeath);
+    floatTexts.forEach(f => f.update(dt)); floatTexts = floatTexts.filter(f => !f.markedForDeath);
+
+    let rem = Math.max(0, gameState.maxTime - gameState.time);
+    let mins = Math.floor(rem / 60); let secs = Math.floor(rem % 60);
+    UI.timer.innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    UI.stats.innerHTML = `境界: 練氣 ${player.level} 層<br>靈石: ${sessionStones}<br>擊殺: ${gameState.kills}<br>血量: ${Math.floor(player.hp)}/${player.maxHp}`;
+
+    draw(); requestAnimationFrame(update);
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2; let gridSize = 100;
+    let ox = -(gameState.camera.x % gridSize); let oy = -(gameState.camera.y % gridSize);
+    ctx.beginPath();
+    for(let x = ox; x < canvas.width; x += gridSize) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
+    for(let y = oy; y < canvas.height; y += gridSize) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
+    ctx.stroke();
+
+    const worldToScreen = (obj) => ({ x: obj.x - gameState.camera.x, y: obj.y - gameState.camera.y });
+
+    drops.forEach(d => d.draw(ctx, gameState.camera));
+
+    if(player && player.hp > 0) {
+        let pPos = worldToScreen(player);
+        ctx.fillStyle = '#3498db'; ctx.beginPath(); ctx.arc(pPos.x, pPos.y, player.radius, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'red'; ctx.fillRect(pPos.x - 15, pPos.y + 20, 30, 4);
+        ctx.fillStyle = '#2ecc71'; ctx.fillRect(pPos.x - 15, pPos.y + 20, 30 * (Math.max(0, player.hp)/player.maxHp), 4);
+    }
+
+    enemies.forEach(e => {
+        let pos = worldToScreen(e); ctx.fillStyle = e.color;
+        ctx.beginPath(); ctx.arc(pos.x, pos.y, e.radius, 0, Math.PI*2); ctx.fill();
+        // 血條繪製
+        if(e.hp < e.maxHp) {
+            ctx.fillStyle = 'red'; ctx.fillRect(pos.x - 12, pos.y - e.radius - 8, 24, 3);
+            ctx.fillStyle = '#2ecc71'; ctx.fillRect(pos.x - 12, pos.y - e.radius - 8, 24 * (e.hp/e.maxHp), 3);
+        }
+        if(e.status.freeze > 0) { ctx.fillStyle='rgba(116,185,255,0.5)'; ctx.beginPath(); ctx.arc(pos.x, pos.y, e.radius+2, 0, Math.PI*2); ctx.fill(); }
+    });
+
+    projectiles.forEach(p => { let pos = worldToScreen(p); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(pos.x, pos.y, 6, 0, Math.PI*2); ctx.fill(); });
+    aoeEffects.forEach(a => a.draw(ctx, gameState.camera));
+
+    ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
+    floatTexts.forEach(f => {
+        let pos = worldToScreen(f); ctx.fillStyle = f.color;
+        ctx.globalAlpha = Math.min(1, f.life * 2); ctx.fillText(f.text, pos.x, pos.y); ctx.globalAlpha = 1.0;
+    });
+}
+
+// 【UI 與邏輯處理】
+function takePlayerDamage(dmg) {
+    player.hp -= dmg;
+    UI.dmgOverlay.style.opacity = 1; setTimeout(() => UI.dmgOverlay.style.opacity = 0, 150);
+    if(player.hp <= 0) {
+        if(sessionRevives > 0) {
+            sessionRevives--; player.hp = player.maxHp;
+            floatTexts.push(new FloatText(player.x, player.y, "九轉還魂!", '#f1c40f'));
+            enemies.forEach(e => { if(Math.hypot(e.x-player.x, e.y-player.y) < 300) e.takeDamage(9999); }); // 清理周圍
+        } else {
+            gameOver();
+        }
+    }
+}
+
+function triggerLevelUp() {
+    gameState.isRunning = false; UI.levelUpModal.style.display = 'block';
+    
+    // 基礎技能池與隨機抽取
+    const basePool = [
+        { name: '清風劍訣', desc: '提升基礎劍氣傷害與發射頻率', action: () => upgradeWeapon('清風劍氣', 'projectile', 15, 1.0, 'normal', 1) },
+        { name: '吐納法', desc: '回復 50 氣血並提升上限', action: () => { player.maxHp += 20; player.hp = Math.min(player.hp+50, player.maxHp); } },
+        { name: '神行步', desc: '提升移動速度 15%', action: () => player.speed *= 1.15 },
+        { name: '神識擴展', desc: '大幅提升靈氣吸收範圍', action: () => player.pickupRadius += 50 },
+        { name: '八卦劍陣', desc: '周圍大範圍陣法攻擊', action: () => upgradeWeapon('八卦劍陣', 'aoe', 20, 3.0, 'normal', 1, 120) },
+        { name: '三昧真火', desc: '發射可點燃敵人的火球', action: () => upgradeWeapon('三昧真火', 'projectile', 25, 1.5, 'fire', 2) },
+        { name: '寒冰飛劍', desc: '凍結並大幅減緩敵人速度', action: () => upgradeWeapon('寒冰飛劍', 'projectile', 10, 1.2, 'ice', 1) }
+    ];
+    
+    let options = basePool.sort(() => 0.5 - Math.random()).slice(0, 4); // 4選1
+    
+    UI.optionsContainer.innerHTML = '';
+    options.forEach(opt => {
+        let isHigh = Math.random() < 0.2; // 20% 獲得隨機詞綴
+        let finalName = opt.name, finalDesc = opt.desc;
+        let actionWrapper = opt.action;
+
+        if (isHigh && opt.name.includes('法') === false && opt.name.includes('步') === false && opt.name.includes('擴展') === false) {
+            let affixes = [
+                { prefix:'[極速]', d: ' (冷卻時間減半)', mod: w => { w.cooldown *= 0.5; } },
+                { prefix:'[天道]', d: ' (傷害翻倍)', mod: w => { w.damage *= 2; } }
+            ];
+            let af = affixes[Math.floor(Math.random()*affixes.length)];
+            finalName = af.prefix + finalName; finalDesc += af.d;
+            actionWrapper = () => { opt.action(); let w = player.weapons.find(w=>w.name===opt.name); if(w) af.mod(w); }
+        }
+
+        let div = document.createElement('div'); div.className = isHigh ? 'card affix-high' : 'card';
+        div.innerHTML = `<div class="card-title">${finalName}</div><div style="font-size:12px; margin-top:5px; color:#aaa;">${finalDesc}</div>`;
+        div.onclick = () => {
+            actionWrapper(); checkSynergies(); 
+            UI.levelUpModal.style.display = 'none'; gameState.lastTime = performance.now(); gameState.isRunning = true; requestAnimationFrame(update);
+        };
+        UI.optionsContainer.appendChild(div);
+    });
+}
+
+function upgradeWeapon(name, type, dmg, cd, el, pierce, radius=0) {
+    let w = player.weapons.find(w=>w.name===name);
+    if(w) w.level++; else { let nw = {name, type, level:1, damage: dmg+(metaData.atkBonus*5), cooldown: cd, timer:0, element: el, pierce, radius}; player.weapons.push(nw); }
+}
+
+function checkSynergies() {
+    let wNames = player.weapons.map(w => w.name);
+    let syns = [
+        { reqW: '清風劍氣', newW: {name: '萬劍歸宗', type: 'projectile', level: 1, damage: 30, cooldown: 0.3, timer:0, element: 'normal', pierce: 99} }
+    ];
+    // 範例：若劍氣達 3 級且擁有神行步 (簡化版：等級達標即進化)
+    syns.forEach(s => {
+        let w = player.weapons.find(w => w.name === s.reqW);
+        if(w && w.level >= 3) {
+            player.weapons = player.weapons.filter(x => x.name !== s.reqW); // 移除舊武
+            player.weapons.push(s.newW); // 加入進化武
+            floatTexts.push(new FloatText(player.x, player.y, "神功大成: " + s.newW.name, '#f1c40f'));
+        }
+    });
+}
+
+function triggerChest() {
+    gameState.isRunning = false; UI.chestModal.style.display = 'block';
+    let rewards = ["獲得 50 顆靈石！", "獲得 100 顆靈石！", "所有武器等級 +1！"];
+    let rIdx = Math.floor(Math.random() * rewards.length);
+    document.getElementById('chest-reward').innerText = rewards[rIdx];
+    
+    if (rIdx === 0) sessionStones += 50; else if (rIdx === 1) sessionStones += 100;
+    else if (rIdx === 2) player.weapons.forEach(w => w.level++);
+}
+function closeChest() {
+    UI.chestModal.style.display = 'none'; gameState.lastTime = performance.now(); gameState.isRunning = true; requestAnimationFrame(update);
+}
+
+function togglePause() {
+    if(UI.gameOverModal.style.display==='block' || UI.levelUpModal.style.display==='block' || UI.startModal.style.display==='block' || UI.chestModal.style.display==='block') return;
+    if(gameState.isRunning) {
+        gameState.isRunning = false; document.getElementById('pause-stones').innerText = metaData.spiritStones + sessionStones; UI.pauseModal.style.display = 'block';
+    } else {
+        UI.pauseModal.style.display = 'none'; gameState.lastTime = performance.now(); gameState.isRunning = true; requestAnimationFrame(update);
+    }
+}
+
+function gameOver() {
+    if(!gameState.isRunning) return; gameState.isRunning = false; UI.gameOverModal.style.display = 'block';
+    metaData.spiritStones += sessionStones; sessionStones = 0; saveMeta();
+    let mins = Math.floor(gameState.time / 60); let secs = Math.floor(gameState.time % 60);
+    document.getElementById('go-stats').innerHTML = `存活時間: ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}<br>總庫存靈石: ${metaData.spiritStones}`;
+}
+
+// 商店系統
+function openShop(from) {
+    shopReturnTo = from; UI.startModal.style.display = 'none'; UI.pauseModal.style.display = 'none'; UI.gameOverModal.style.display = 'none'; UI.shopModal.style.display = 'block';
+    renderShop();
+}
+function closeShop() {
+    UI.shopModal.style.display = 'none';
+    if(shopReturnTo==='start') UI.startModal.style.display = 'block'; else if(shopReturnTo==='pause') UI.pauseModal.style.display = 'block'; else UI.gameOverModal.style.display = 'block';
+}
+function renderShop() {
+    let tot = metaData.spiritStones + (shopReturnTo === 'pause' ? sessionStones : 0);
+    document.getElementById('shop-stones').innerText = tot;
+    let html = '';
+    shopCatalog.forEach(item => {
+        let currentLevel = getBoughtCount(item.id);
+        let btnHTML = currentLevel >= item.max ? `<span style="color:#2ecc71">已達上限</span>` : `可購買 (${currentLevel}/${item.max})`;
+        html += `<div class="card" onclick="buyItem('${item.id}', ${item.cost}, ${item.max})" style="display:flex; justify-content:space-between; align-items:center;">
+            <div><div class="card-title">${item.name}</div><div style="font-size:12px; color:#aaa;">${item.desc}</div></div>
+            <div style="text-align:right;"><div style="color:#f1c40f; font-weight:bold;">${item.cost} 靈石</div><div style="font-size:12px; color:#777;">${btnHTML}</div></div>
+        </div>`;
+    });
+    document.getElementById('shop-items').innerHTML = html;
+}
+function getBoughtCount(id) {
+    if(id==='hp') return metaData.hpBonus; if(id==='atk') return metaData.atkBonus; if(id==='magnet') return metaData.startMagnet ? 1 : 0;
+    if(id==='aoe') return metaData.startAoe ? 1 : 0; if(id==='revive') return metaData.revives; return 0;
+}
+function buyItem(id, cost, max) {
+    if (getBoughtCount(id) >= max) { alert("已達購買上限！"); return; }
+    let tot = metaData.spiritStones + (shopReturnTo === 'pause' ? sessionStones : 0);
+    if(tot >= cost) {
+        if(shopReturnTo === 'pause') { if(sessionStones >= cost) sessionStones -= cost; else { metaData.spiritStones -= (cost - sessionStones); sessionStones = 0; } } 
+        else metaData.spiritStones -= cost;
+        
+        if(id==='hp') { metaData.hpBonus++; if(player){ player.maxHp+=20; player.hp+=20; } }
+        else if(id==='atk') metaData.atkBonus++; else if(id==='magnet') metaData.startMagnet = true;
+        else if(id==='aoe') metaData.startAoe = true; else if(id==='revive') { metaData.revives++; if(player) sessionRevives++; }
+        
+        saveMeta(); renderShop();
+    } else alert("靈石不足！");
+}
+function saveMeta() { localStorage.setItem('guigu_save_v2', JSON.stringify(metaData)); }
+
+window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+draw();
+</script>
+</body>
+</html>
