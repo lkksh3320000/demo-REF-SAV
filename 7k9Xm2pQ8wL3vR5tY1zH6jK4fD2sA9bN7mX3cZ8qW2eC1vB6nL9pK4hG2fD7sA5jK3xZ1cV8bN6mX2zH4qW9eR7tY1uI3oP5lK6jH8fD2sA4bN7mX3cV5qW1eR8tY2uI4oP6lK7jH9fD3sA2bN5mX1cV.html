@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>鬼谷倖存者 (Demo-004: 宗門覺醒與萬象特效)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #0a0a0a; overflow: hidden; font-family: 'Segoe UI', sans-serif; touch-action: none; user-select: none; }
+        #bg-3d-canvas { position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none; }
+        #gameCanvas { position: absolute; top: 0; left: 0; z-index: 2; background: transparent; }
+        
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: none; z-index: 10; }
+        .bar-container { position: absolute; top: 10px; left: 10px; width: calc(100% - 150px); height: 20px; background: #333; border: 2px solid #555; border-radius: 10px; overflow: hidden; }
+        #exp-bar { width: 0%; height: 100%; background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%); transition: width 0.2s; }
+        .stats { position: absolute; top: 40px; left: 15px; color: white; text-shadow: 1px 1px 2px black; font-size: 14px; line-height: 1.6; }
+        #timer { position: absolute; top: 40px; right: 15px; color: white; font-size: 20px; font-weight: bold; text-shadow: 2px 2px 4px black; }
+        #fps-monitor { position: absolute; top: 10px; right: 150px; color: #f1c40f; font-size: 12px; font-weight: bold; }
+        
+        .btn { pointer-events: auto; background: rgba(20,20,20,0.85); color: #c9a562; border: 1px solid #c9a562; padding: 8px 18px; border-radius: 5px; cursor: pointer; font-weight: bold; margin: 5px; transition: 0.2s; display: inline-block; text-shadow: 1px 1px 2px black; }
+        .btn:hover { background: #c9a562; color: #000; box-shadow: 0 0 10px #c9a562; }
+        #pause-btn { position: absolute; top: 5px; right: 10px; z-index: 50; }
+        #auto-btn { position: absolute; top: 5px; right: 80px; z-index: 50; border-color: #3498db; color: #3498db; }
+        .auto-active { background: #3498db !important; color: white !important; }
+
+        #joystick-zone { position: absolute; bottom: 10%; left: 10%; width: 120px; height: 120px; pointer-events: auto; display: none; }
+        #joystick-base { width: 100%; height: 100%; background: rgba(255, 255, 255, 0.15); border-radius: 50%; position: relative; border: 1px solid rgba(255,255,255,0.3); }
+        #joystick-stick { width: 40px; height: 40px; background: rgba(255, 255, 255, 0.6); border-radius: 50%; position: absolute; top: 40px; left: 40px; }
+        
+        .modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(15, 15, 15, 0.95); border: 2px solid #c9a562; padding: 25px; border-radius: 12px; color: white; text-align: center; pointer-events: auto; width: 85%; max-width: 500px; z-index: 100; max-height: 85vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.9); }
+        .card { background: #2a2a2a; border: 1px solid #555; padding: 12px; margin: 8px 0; border-radius: 8px; cursor: pointer; transition: 0.2s; position: relative; text-align: left;}
+        .card:hover { border-color: #c9a562; background: #3a3a3a; transform: translateY(-2px); }
+        .card-title { font-weight: bold; font-size: 16px; color: #f1c40f; margin-bottom: 4px; }
+        .affix-high { border-color: #e74c3c; box-shadow: inset 0 0 15px rgba(231,76,60,0.15); }
+        .affix-high .card-title { color: #ff7675; }
+        
+        .mode-btn { width: 100%; box-sizing: border-box; margin: 6px 0; font-size: 16px; padding: 12px; }
+        #damage-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(255,0,0,0.3); pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 40;}
+        
+        .nav-tabs { display: flex; border-bottom: 1px solid #555; margin-bottom: 15px; }
+        .nav-tab { flex: 1; padding: 10px; cursor: pointer; color: #aaa; background: #222; border: 1px solid #555; border-bottom: none; }
+        .nav-tab.active { background: #c9a562; color: #000; font-weight: bold; }
+        .grid-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; }
+        .grid-item { background: #333; border: 1px solid #555; padding: 10px; border-radius: 5px; text-align: center; font-size: 24px; position: relative; }
+        .grid-item span { display: block; font-size: 10px; color: #aaa; margin-top: 5px; }
+
+        @media (hover: none) and (pointer: coarse) { #joystick-zone { display: block; } }
+    </style>
+</head>
+<body>
+    <canvas id="bg-3d-canvas"></canvas>
+    <canvas id="gameCanvas"></canvas>
+    <div id="damage-overlay"></div>
+    
+    <div id="ui-layer">
+        <div class="bar-container"><div id="exp-bar"></div></div>
+        <div id="fps-monitor">FPS: 60</div>
+        <button id="auto-btn" class="btn" onclick="toggleAuto()">🤖 託管</button>
+        <button id="pause-btn" class="btn" onclick="togglePause()">暫停</button>
+        <div class="stats" id="stats-display"></div>
+        <div id="timer">00:00</div>
+        <div id="joystick-zone"><div id="joystick-base"><div id="joystick-stick"></div></div></div>
+    </div>
+
+    <!-- Start Modal / Sect Selection -->
+    <div id="start-modal" class="modal" style="display: block;">
+        <h1 style="color: #c9a562; margin-top: 0; font-size: 32px; letter-spacing: 2px;">鬼谷倖存者</h1>
+        <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+            💎 <span id="start-stones" style="color:#00f2fe;">0</span> | 
+            🔴 <span id="start-cores" style="color:#e74c3c;">0</span> | 
+            ⛓️ <span id="start-irons" style="color:#95a5a6;">0</span>
+        </div>
+        <h3 style="color: #aaa; text-align: left; border-bottom: 1px solid #555; padding-bottom: 5px;">選擇修行宗門與時長：</h3>
+        <button class="btn mode-btn" onclick="startGame(300, 'sword')" style="border-color:#3498db; color:#3498db;">【劍修宗門】力量+5 敏捷+2 (5分鐘)</button>
+        <button class="btn mode-btn" onclick="startGame(600, 'magic')" style="border-color:#e74c3c; color:#e74c3c;">【法修宗門】悟性+5 體質+2 (10分鐘)</button>
+        <button class="btn mode-btn" onclick="startGame(900, 'body')" style="border-color:#2ecc71; color:#2ecc71;">【體修宗門】體質+7 極致生存 (15分鐘)</button>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button class="btn" style="flex:1; background: #8e44ad; color: white;" onclick="openShop('start', 'shop')">聚寶閣 (24階)</button>
+            <button class="btn" style="flex:1; background: #d35400; color: white;" onclick="openShop('start', 'craft')">神兵坊</button>
+        </div>
+    </div>
+
+    <div id="levelup-modal" class="modal">
+        <h2 style="color: #c9a562;">境界突破</h2>
+        <div id="upgrade-options"></div>
+    </div>
+    
+    <div id="chest-modal" class="modal">
+        <h2 style="color: #f1c40f; font-size: 28px;">機緣降臨！</h2>
+        <div id="chest-reward" style="font-size: 18px; line-height: 1.8; color: #00f2fe; margin: 20px 0;"></div>
+        <button class="btn" onclick="closeChest()" style="font-size: 18px; padding: 10px 30px;">收下</button>
+    </div>
+
+    <div id="gameover-modal" class="modal">
+        <h2 id="go-title" style="color: #e74c3c; font-size: 32px;">道死身消</h2>
+        <p id="go-stats" style="font-size: 16px; line-height: 1.6;"></p>
+        <button class="btn" onclick="location.reload()" style="margin-top: 10px;">輪迴重修 (首頁)</button>
+    </div>
+
+    <div id="pause-modal" class="modal">
+        <h2 style="color: #c9a562;">修行暫停</h2>
+        <div class="nav-tabs">
+            <div id="ptab-main" class="nav-tab active" onclick="switchPauseTab('main')">狀態</div>
+            <div id="ptab-inv" class="nav-tab" onclick="switchPauseTab('inv')">行囊背包</div>
+        </div>
+        <div id="pause-content-main">
+            <p style="text-align:left; background:#222; padding:10px; border-radius:5px;">
+                💪 力量: <span id="p-str">0</span> (增傷)<br>
+                🏃 敏捷: <span id="p-agi">0</span> (減CD)<br>
+                ❤️ 體質: <span id="p-vit">0</span> (氣血)<br>
+                🧠 悟性: <span id="p-int">0</span> (經驗)<br>
+                💎 局內靈石: <span id="pause-stones">0</span>
+            </p>
+            <button class="btn mode-btn" onclick="togglePause()">繼續修行</button>
+            <button class="btn mode-btn" onclick="openShop('pause', 'shop')" style="background: #8e44ad; color: white;">局內聚寶閣</button>
+            <button class="btn mode-btn" onclick="location.reload()" style="border-color: #e74c3c; color: #e74c3c;">放棄本次輪迴</button>
+        </div>
+        <div id="pause-content-inv" style="display:none; max-height: 300px; overflow-y:auto;">
+            <div class="grid-container" id="inventory-grid"></div>
+        </div>
+    </div>
+
+    <div id="hub-modal" class="modal" style="padding-top: 15px;">
+        <div class="nav-tabs">
+            <div id="tab-shop" class="nav-tab active" onclick="switchHubTab('shop')">聚寶閣</div>
+            <div id="tab-craft" class="nav-tab" onclick="switchHubTab('craft')">神兵坊</div>
+            <div id="tab-mastery" class="nav-tab" onclick="switchHubTab('mastery')">武學</div>
+        </div>
+        <div style="margin-bottom: 15px; font-size: 14px; text-align: left; padding: 5px; background: rgba(0,0,0,0.5); border-radius: 5px;">
+            💎 <span id="hub-stones" style="color:#f1c40f">0</span> | 🔴 <span id="hub-cores" style="color:#e74c3c">0</span> | ⛓️ <span id="hub-irons" style="color:#95a5a6">0</span>
+        </div>
+        <div id="hub-content" style="text-align: left; max-height: 350px; overflow-y:auto; padding-right:5px;"></div>
+        <button class="btn" onclick="closeHub()" style="margin-top: 15px; width: 100%;">返回</button>
+    </div>
+
+<script>
+/** 效能與 3D 視覺隔離層 (VFX3DManager) */
+let currentFps = 60, frameCount = 0, lastFpsTime = performance.now();
+const VisualEngine3D = {
+    isReady: false, scene: null, camera: null, renderer: null, particles: null, pointLights: [],
+    init: function() {
+        if (typeof THREE === 'undefined') { console.warn("3D Engine Offline"); return; }
+        try {
+            const canvas3d = document.getElementById('bg-3d-canvas');
+            this.renderer = new THREE.WebGLRenderer({ canvas: canvas3d, alpha: true, antialias: false });
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            this.scene = new THREE.Scene();
+            this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+            this.camera.position.z = 50;
+
+            const geo = new THREE.BufferGeometry();
+            const pos = [];
+            for (let i = 0; i < 400; i++) { pos.push(THREE.MathUtils.randFloatSpread(200), THREE.MathUtils.randFloatSpread(200), THREE.MathUtils.randFloatSpread(200)); }
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            this.particles = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x00f2fe, size: 0.5, transparent: true, opacity: 0.3 }));
+            this.scene.add(this.particles);
+
+            // 預載特效光源池
+            for(let i=0; i<10; i++) {
+                let l = new THREE.PointLight(0xffffff, 0, 100);
+                this.scene.add(l); this.pointLights.push({light: l, life: 0});
+            }
+            this.isReady = true; this.animate();
+        } catch(e) { this.isReady = false; }
+    },
+    animate: function() {
+        if(!this.isReady) return;
+        requestAnimationFrame(() => this.animate());
+        if(this.particles) { this.particles.rotation.y += 0.001; }
+        
+        // 更新特效光源
+        this.pointLights.forEach(p => {
+            if(p.life > 0) { p.life -= 0.05; p.light.intensity = p.life * 2; } 
+            else { p.light.intensity = 0; }
+        });
+        this.renderer.render(this.scene, this.camera);
+    },
+    spawnEffect: function(x, y, camX, camY, element) {
+        if(!this.isReady || currentFps < 40) return; // 效能降級保護
+        let sx = (x - camX - window.innerWidth/2) * 0.1;
+        let sy = -(y - camY - window.innerHeight/2) * 0.1;
+        
+        let p = this.pointLights.find(l => l.life <= 0);
+        if(p) {
+            p.light.position.set(sx, sy, 0); p.life = 1.0;
+            if(element === 'fire') p.light.color.setHex(0xff4757);
+            else if(element === 'ice') p.light.color.setHex(0x74b9ff);
+            else if(element === 'lightning') p.light.color.setHex(0x9b59b6);
+            else if(element === 'poison') p.light.color.setHex(0x2ecc71);
+            else p.light.color.setHex(0xf1c40f);
+        }
+    }
+};
+VisualEngine3D.init();
+
+/** 核心引擎與資料庫 */
+const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+
+const UI = {
+    layer: document.getElementById('ui-layer'), expBar: document.getElementById('exp-bar'), stats: document.getElementById('stats-display'), timer: document.getElementById('timer'),
+    startModal: document.getElementById('start-modal'), levelUpModal: document.getElementById('levelup-modal'), optionsContainer: document.getElementById('upgrade-options'),
+    chestModal: document.getElementById('chest-modal'), gameOverModal: document.getElementById('gameover-modal'), pauseModal: document.getElementById('pause-modal'),
+    hubModal: document.getElementById('hub-modal'), dmgOverlay: document.getElementById('damage-overlay'), joyBase: document.getElementById('joystick-base'), joyStick: document.getElementById('joystick-stick'), autoBtn: document.getElementById('auto-btn')
+};
+
+let rawData = localStorage.getItem('guigu_save_v4');
+let metaData = rawData ? JSON.parse(rawData) : {
+    spiritStones: 0, cores: 0, irons: 0,
+    baseStats: { str: 0, agi: 0, vit: 0, int: 0 },
+    inventory: [], equipment: { weapon: null, armor: null, artifact: null },
+    mastery: {}, revives: 0
+};
+// 升級資料庫：自動產生 24 階裝備 (8大境界 x 3個)
+const realms = ['凡人','練氣','築基','結丹','元嬰','化神','悟道','登仙'];
+const shopCatalog = [];
+realms.forEach((r, i) => {
+    let cost = Math.floor(20 * Math.pow(1.8, i));
+    shopCatalog.push({ id: `s_str_${i}`, name: `${r}力丹`, desc: `力量 +${i+1}`, cost: cost, max: 5, stat: 'str', val: i+1 });
+    shopCatalog.push({ id: `s_agi_${i}`, name: `${r}風丹`, desc: `敏捷 +${i+1}`, cost: cost, max: 5, stat: 'agi', val: i+1 });
+    shopCatalog.push({ id: `s_vit_${i}`, name: `${r}血丹`, desc: `體質 +${i+1}`, cost: cost, max: 5, stat: 'vit', val: i+1 });
+});
+
+let sessionLoot = { stones: 0, cores: 0, irons: 0, revives: 0 };
+let hubReturnTo = 'start'; 
+let gameState = { isRunning: false, isAutoPilot: false, time: 0, maxTime: 300, kills: 0, lastTime: 0, camera: { x: 0, y: 0 }, spawns: {} };
+let player, enemies = [], projectiles = [], enemyProjectiles = [], drops = [], floatTexts = [], aoeEffects = [], companions = [];
+
+// 輸入分離解耦
+let kbInput = {x: 0, y: 0}, joyInput = {x: 0, y: 0}, aiMomentum = {x: 0, y: 0};
+let spawnerTimer = 0;
+
+/** 實體類別 */
+class Player {
+    constructor(sect) {
+        this.x = 0; this.y = 0; this.radius = 15;
+        // 宗門屬性重算引擎
+        this.stats = { str: metaData.baseStats.str, agi: metaData.baseStats.agi, vit: metaData.baseStats.vit, int: metaData.baseStats.int };
+        if(sect === 'sword') { this.stats.str += 5; this.stats.agi += 2; }
+        else if(sect === 'magic') { this.stats.int += 5; this.stats.vit += 2; }
+        else if(sect === 'body') { this.stats.vit += 7; }
+
+        this.speed = 160 + (this.stats.agi * 1.5); 
+        this.maxHp = 100 + (this.stats.vit * 20); this.hp = this.maxHp;
+        this.level = 1; this.exp = 0; this.maxExp = 50;
+        this.pickupRadius = 60 + (this.stats.int * 2);
+        this.expMulti = 1 + (this.stats.int * 0.05);
+
+        this.weapons = [];
+        if(sect === 'sword') this.addWeapon('清風劍氣', 'projectile', 15, 1.0, 'normal', 1);
+        else if(sect === 'magic') this.addWeapon('三昧真火', 'projectile', 25, 1.5, 'fire', 2);
+        else this.addWeapon('玄冰護盾', 'orbit', 10, 0, 'ice', 99, 60);
+
+        this.magnetTimer = 0;
+    }
+    addWeapon(name, type, dmg, cd, el, pierce, radius=0) {
+        let w = this.weapons.find(x=>x.name===name);
+        if(w) w.level++; else this.weapons.push({name, type, level:1, baseDmg: dmg, baseCd: cd, timer:0, element: el, pierce, radius, angle:0});
+    }
+    update(dt) {
+        // AI 託管演算法 2.0 (Steering Behaviors)
+        if (gameState.isAutoPilot) {
+            let aiVec = {x: 0, y: 0}; let danger = false;
+            enemies.forEach(e => {
+                let d = Math.hypot(e.x - this.x, e.y - this.y);
+                if (d < 150) { aiVec.x -= (e.x - this.x)/(d*d); aiVec.y -= (e.y - this.y)/(d*d); danger = true; }
+            });
+            if (!danger && drops.length > 0) { // 貪婪模式
+                let dTarget = drops[0]; let d = Math.hypot(dTarget.x - this.x, dTarget.y - this.y);
+                if(d > 0) { aiVec.x += (dTarget.x - this.x)/d; aiVec.y += (dTarget.y - this.y)/d; }
+            }
+            let aLen = Math.hypot(aiVec.x, aiVec.y);
+            if(aLen > 0) { aiVec.x /= aLen; aiVec.y /= aLen; }
+            // 慣性插值 (Lerp)
+            aiMomentum.x = aiMomentum.x * 0.85 + aiVec.x * 0.15;
+            aiMomentum.y = aiMomentum.y * 0.85 + aiVec.y * 0.15;
+            kbInput.x = aiMomentum.x; kbInput.y = aiMomentum.y; joyInput.x = 0; joyInput.y = 0;
+        }
+
+        // 合併輸入
+        let ix = Math.abs(kbInput.x) > Math.abs(joyInput.x) ? kbInput.x : joyInput.x;
+        let iy = Math.abs(kbInput.y) > Math.abs(joyInput.y) ? kbInput.y : joyInput.y;
+        
+        if(ix !== 0 || iy !== 0) {
+            let len = Math.hypot(ix, iy);
+            this.x += (ix / len) * this.speed * dt; this.y += (iy / len) * this.speed * dt;
+        }
+        gameState.camera.x = this.x - canvas.width / 2; gameState.camera.y = this.y - canvas.height / 2;
+        if (this.magnetTimer > 0) this.magnetTimer -= dt;
+
+        this.weapons.forEach(w => {
+            // RPG 屬性與熟練度加成公式
+            let masteryLvl = metaData.mastery[w.name] || 0;
+            let actualDmg = w.baseDmg * (1 + this.stats.str * 0.05) * (1 + masteryLvl * 0.02) * (1 + (w.level-1)*0.2);
+            let actualCd = w.baseCd * Math.pow(0.98, this.stats.agi) * Math.pow(0.99, masteryLvl);
+            
+            if(w.type === 'orbit') {
+                w.angle += 3 * dt;
+                let ox = this.x + Math.cos(w.angle) * w.radius; let oy = this.y + Math.sin(w.angle) * w.radius;
+                VisualEngine3D.spawnEffect(ox, oy, gameState.camera.x, gameState.camera.y, w.element);
+                enemies.forEach(e => { if(Math.hypot(ox - e.x, oy - e.y) < e.radius + 15) { e.takeDamage(actualDmg * dt * 2); e.applyElement(w.element); } });
+            } else {
+                w.timer -= dt;
+                if(w.timer <= 0) {
+                    if (w.type === 'projectile') { if (this.fireProjectile(w, actualDmg)) w.timer = Math.max(0.1, actualCd); } 
+                    else if (w.type === 'aoe') { this.fireAoe(w, actualDmg); w.timer = Math.max(0.5, actualCd); }
+                }
+            }
+        });
+    }
+    fireProjectile(w, actualDmg) {
+        if(enemies.length === 0) return false;
+        let closest = enemies.reduce((c, e) => { let d = Math.hypot(this.x - e.x, this.y - e.y); return d < c.d ? {e: e, d: d} : c; }, {e: null, d: Infinity});
+        if (closest.e && closest.d < 600) {
+            let dx = closest.e.x - this.x; let dy = closest.e.y - this.y; let len = Math.hypot(dx, dy);
+            projectiles.push(new Projectile(this.x, this.y, dx/len, dy/len, actualDmg, w.name, w.element, w.pierce));
+            return true;
+        } return false;
+    }
+    fireAoe(w, actualDmg) {
+        let r = w.radius + (w.level * 15) + (this.stats.int * 2);
+        aoeEffects.push(new AoeEffect(this.x, this.y, r, w.element));
+        enemies.forEach(e => { if(Math.hypot(this.x - e.x, this.y - e.y) <= r + e.radius) { e.takeDamage(actualDmg); e.applyElement(w.element); } });
+    }
+    gainExp(amt) {
+        this.exp += amt * this.expMulti;
+        if(this.exp >= this.maxExp) { this.exp -= this.maxExp; this.level++; this.maxExp = Math.floor(this.maxExp * 1.5); triggerLevelUp(); }
+        UI.expBar.style.width = `${(this.exp / this.maxExp) * 100}%`;
+    }
+}
+
+class Enemy {
+    constructor(x, y, type) {
+        this.x = x; this.y = y; this.type = type; this.markedForDeath = false; this.attackCooldown = 0;
+        this.status = { burn: 0, burnTick: 0, freeze: 0, poison: 0 }; this.skillTimer = 2.0;
+        let diff = 1 + (gameState.time / 60) * 1.3; 
+        switch(type) {
+            case 'boss': this.maxHp = 5000 * diff; this.speed = 70; this.radius = 35; this.damage = 40; this.color = '#f1c40f'; break;
+            case 'elite_blood': this.maxHp = 1200 * diff; this.speed = 80; this.radius = 25; this.damage = 30; this.color = '#c0392b'; break;
+            case 'elite_tree': this.maxHp = 900 * diff; this.speed = 40; this.radius = 25; this.damage = 20; this.color = '#1abc9c'; break;
+            default: this.maxHp = 30 * diff; this.speed = 50 + (Math.random()*25); this.radius = 12; this.damage = 10; this.color = '#2ecc71';
+        }
+        this.hp = this.maxHp;
+    }
+    update(dt) {
+        let currentSpeed = this.speed;
+        if (this.status.freeze > 0) { this.status.freeze -= dt; currentSpeed *= 0.3; } 
+        if (this.status.burn > 0) { this.status.burn -= dt; this.status.burnTick -= dt; if(this.status.burnTick <= 0) { this.takeDamage(15); this.status.burnTick = 0.5; } }
+        if (this.status.poison > 0) { this.status.poison -= dt; this.takeDamage(10 * dt); } // 持續扣血
+
+        let dx = player.x - this.x; let dy = player.y - this.y; let len = Math.hypot(dx, dy);
+        if (this.type === 'elite_blood') { this.skillTimer -= dt; if (this.skillTimer <= 0) { currentSpeed *= 3.5; if (this.skillTimer < -0.5) this.skillTimer = 3.0; } } 
+        else if (this.type === 'elite_tree') {
+            if (len < 300) currentSpeed = 0; this.skillTimer -= dt;
+            if (this.skillTimer <= 0 && len < 400) { enemyProjectiles.push(new Projectile(this.x, this.y, dx/len, dy/len, 15, '毒液', 'enemy', 1)); this.skillTimer = 2.5; }
+        }
+        if(len > 0) { this.x += (dx/len) * currentSpeed * dt; this.y += (dy/len) * currentSpeed * dt; }
+        
+        if (this.attackCooldown > 0) this.attackCooldown -= dt;
+        if (len < this.radius + player.radius && this.attackCooldown <= 0) { takePlayerDamage(this.damage); this.attackCooldown = 1.0; }
+    }
+    takeDamage(dmg) {
+        this.hp -= dmg; floatTexts.push(new FloatText(this.x, this.y - 20, Math.floor(dmg), '#fff'));
+        if(this.hp <= 0 && !this.markedForDeath) {
+            this.markedForDeath = true; gameState.kills++;
+            if (this.type.includes('boss')) { drops.push(new Drop(this.x, this.y, 'chest')); sessionLoot.cores += 2; }
+            else if (this.type.includes('elite')) { drops.push(new Drop(this.x, this.y, 'magnet')); sessionLoot.irons += 3; }
+            else {
+                let r = Math.random();
+                if (r < 0.01) drops.push(new Drop(this.x, this.y, 'bomb'));
+                else if (r < 0.03) drops.push(new Drop(this.x, this.y, 'heal'));
+                else if (r < 0.05) sessionLoot.irons++; 
+                else drops.push(new Drop(this.x, this.y, 'exp', 5 + (gameState.time/60)*2));
+            }
+            if (this.type.includes('boss') || this.type.includes('elite')) sessionLoot.stones += Math.floor(Math.random()*5)+2;
+            else if (Math.random() < 0.1) sessionLoot.stones++;
+        }
+    }
+    applyElement(el) { if (el === 'fire') this.status.burn = 3.0; else if (el === 'ice') this.status.freeze = 2.0; else if (el === 'poison') this.status.poison = 5.0; }
+}
+
+class Projectile {
+    constructor(x, y, vx, vy, dmg, name, el, pierce) {
+        this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.speed = el === 'enemy' ? 200 : 500; 
+        this.damage = dmg; this.life = 2.0; this.markedForDeath = false; this.element = el; this.pierce = pierce; this.hitTargets = [];
+        this.isTracking = name.includes('歸宗'); this.isChain = name.includes('雷劫');
+        if(el === 'fire') this.color = '#ff4757'; else if(el === 'ice') this.color = '#74b9ff'; else if(el === 'lightning') this.color = '#9b59b6'; else if(el === 'enemy') this.color = '#27ae60'; else this.color = '#00ffff';
+    }
+    update(dt) {
+        if (this.isTracking && enemies.length > 0 && this.element !== 'enemy') {
+            let closest = enemies.reduce((c, e) => { let d = Math.hypot(this.x - e.x, this.y - e.y); return d < c.d ? {e: e, d: d} : c; }, {e: null, d: Infinity});
+            if (closest.e) { let dx = closest.e.x - this.x; let dy = closest.e.y - this.y; let len = Math.hypot(dx, dy); this.vx += (dx/len)*8*dt; this.vy += (dy/len)*8*dt; let nLen = Math.hypot(this.vx, this.vy); this.vx /= nLen; this.vy /= nLen; }
+        }
+        this.x += this.vx * this.speed * dt; this.y += this.vy * this.speed * dt;
+        this.life -= dt; if(this.life <= 0) this.markedForDeath = true;
+
+        if (this.element === 'enemy') {
+            if(Math.hypot(this.x - player.x, this.y - player.y) < player.radius + 6) { takePlayerDamage(this.damage); this.markedForDeath = true; }
+        } else {
+            for(let e of enemies) {
+                if(Math.hypot(this.x - e.x, this.y - e.y) < e.radius + 10 && !this.hitTargets.includes(e)) {
+                    e.takeDamage(this.damage); e.applyElement(this.element); this.hitTargets.push(e); this.pierce--;
+                    if(this.isChain && enemies.length > 1) { // 彈射邏輯
+                        let next = enemies.find(x => x !== e && !this.hitTargets.includes(x) && Math.hypot(x.x-this.x, x.y-this.y) < 200);
+                        if(next) { let nx=next.x-this.x; let ny=next.y-this.y; let nl=Math.hypot(nx,ny); this.vx=nx/nl; this.vy=ny/nl; }
+                    }
+                    if(this.pierce <= 0) { this.markedForDeath = true; break; }
+                }
+            }
+        }
+    }
+    draw(ctx, cam) { 
+        VisualEngine3D.spawnEffect(this.x, this.y, cam.x, cam.y, this.element); // 呼叫 3D 特效
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x-cam.x, this.y-cam.y, this.element==='enemy'?8:6, 0, Math.PI*2); ctx.fill(); 
+        ctx.globalCompositeOperation = 'source-over';
+    }
+}
+
+class AoeEffect {
+    constructor(x, y, radius, element) { this.x = x; this.y = y; this.maxRadius = radius; this.radius = 0; this.life = element==='poison'?5.0:0.3; this.element = element; this.markedForDeath = false; }
+    update(dt) { 
+        if(this.element === 'poison') { this.radius = this.maxRadius; this.life -= dt; if(this.life <= 0) this.markedForDeath = true; }
+        else { this.radius += (this.maxRadius - this.radius) * 12 * dt; this.life -= dt; if(this.life <= 0) this.markedForDeath = true; }
+    }
+    draw(ctx, cam) { 
+        ctx.strokeStyle = this.element==='poison'? `rgba(46, 204, 113, ${Math.min(1, this.life)})` : `rgba(241, 196, 15, ${this.life * 3})`; 
+        ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(this.x - cam.x, this.y - cam.y, this.radius, 0, Math.PI*2); ctx.stroke(); 
+        if(this.life > 0.1) VisualEngine3D.spawnEffect(this.x + Math.random()*this.radius - this.radius/2, this.y, cam.x, cam.y, this.element);
+    }
+}
+
+class Drop {
+    constructor(x, y, type, expVal=0) {
+        this.x = x; this.y = y; this.type = type; this.exp = expVal; this.markedForDeath = false;
+        switch(type) { case 'heal': this.emoji = '💊'; break; case 'bomb': this.emoji = '💣'; break; case 'magnet': this.emoji = '🧲'; break; case 'chest': this.emoji = '🎁'; break; default: this.emoji = expVal > 20 ? '🔴' : '🔵'; }
+    }
+    update(dt) {
+        let dist = Math.hypot(player.x - this.x, player.y - this.y); let pullDist = player.magnetTimer > 0 ? 2000 : player.pickupRadius; 
+        if(dist < pullDist) {
+            this.x += ((player.x - this.x)/dist) * 500 * dt; this.y += ((player.y - this.y)/dist) * 500 * dt;
+            if(dist < 20) {
+                this.markedForDeath = true;
+                switch(this.type) {
+                    case 'heal': player.hp = Math.min(player.hp + player.maxHp*0.2, player.maxHp); floatTexts.push(new FloatText(player.x, player.y, "+HP", '#2ecc71')); break;
+                    case 'bomb': enemies.forEach(e => e.takeDamage(9999)); floatTexts.push(new FloatText(player.x, player.y, "天雷炸裂!", '#fff')); break;
+                    case 'magnet': player.magnetTimer = 0.5; floatTexts.push(new FloatText(player.x, player.y, "萬物聚靈!", '#9b59b6')); break;
+                    case 'chest': triggerChest(); break;
+                    default: player.gainExp(this.exp);
+                }
+            }
+        }
+    }
+    draw(ctx, cam) { ctx.font = "20px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(this.emoji, this.x - cam.x, this.y - cam.y); }
+}
+
+class FloatText {
+    constructor(x, y, text, color='#fff') { this.x = x; this.y = y; this.text = text; this.life = 0.8; this.color = color; this.markedForDeath = false; }
+    update(dt) { this.y -= 40 * dt; this.life -= dt; if(this.life <= 0) this.markedForDeath = true; }
+    draw(ctx, cam) { ctx.fillStyle = this.color; ctx.globalAlpha = Math.min(1, this.life * 2); ctx.fillText(this.text, this.x - cam.x, this.y - cam.y); ctx.globalAlpha = 1.0; }
+}
+
+/** 輸入與控制 */
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if(e.key === 'escape' && gameState.isRunning) togglePause(); });
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+let joyActive = false, joyCenter = {x: 0, y: 0};
+UI.joyBase.addEventListener('touchstart', e => { e.preventDefault(); joyActive = true; let rect = UI.joyBase.getBoundingClientRect(); joyCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 }; handleJoy(e.touches[0]); }, {passive:false});
+UI.joyBase.addEventListener('touchmove', e => { e.preventDefault(); if(joyActive) handleJoy(e.touches[0]); }, {passive:false});
+window.addEventListener('touchend', () => { joyActive = false; joyInput.x = 0; joyInput.y = 0; UI.joyStick.style.transform = `translate(0px, 0px)`; });
+
+function handleJoy(t) {
+    let dx = t.clientX - joyCenter.x; let dy = t.clientY - joyCenter.y; let len = Math.hypot(dx, dy); let maxDist = 40;
+    if(len > maxDist) { dx = (dx/len)*maxDist; dy = (dy/len)*maxDist; }
+    UI.joyStick.style.transform = `translate(${dx}px, ${dy}px)`; joyInput.x = dx / maxDist; joyInput.y = dy / maxDist;
+}
+function toggleAuto() { gameState.isAutoPilot = !gameState.isAutoPilot; if (gameState.isAutoPilot) UI.autoBtn.classList.add('auto-active'); else { UI.autoBtn.classList.remove('auto-active'); kbInput.x=0; kbInput.y=0; } }
+
+function startGame(timeLimit, sect) {
+    gameState.maxTime = timeLimit; gameState.spawns = {}; sessionLoot = { stones: 0, cores: 0, irons: 0, revives: metaData.revives || 0 }; 
+    UI.startModal.style.display = 'none'; UI.layer.style.display = 'block';
+    player = new Player(sect);
+    gameState.lastTime = performance.now(); gameState.isRunning = true;
+    requestAnimationFrame(update);
+}
+
+function update() {
+    if(!gameState.isRunning) return;
+    let now = performance.now(); let dt = (now - gameState.lastTime) / 1000; if(dt > 0.1) dt = 0.1; 
+    gameState.lastTime = now; gameState.time += dt;
+
+    // FPS 計算
+    frameCount++;
+    if (now - lastFpsTime >= 1000) { currentFps = frameCount; frameCount = 0; lastFpsTime = now; document.getElementById('fps-monitor').innerText = `FPS: ${currentFps}`; }
+
+    if (!gameState.isAutoPilot) {
+        if(keys['w'] || keys['arrowup']) kbInput.y = -1; else if(keys['s'] || keys['arrowdown']) kbInput.y = 1; else kbInput.y = 0;
+        if(keys['a'] || keys['arrowleft']) kbInput.x = -1; else if(keys['d'] || keys['arrowright']) kbInput.x = 1; else kbInput.x = 0;
+    }
+
+    player.update(dt);
+    
+    spawnerTimer += dt;
+    let pct = gameState.time / gameState.maxTime; let spawnRate = Math.max(0.15, 1.0 - (pct * 0.85)); 
+    let r = Math.max(canvas.width, canvas.height) / 2 + 50; 
+
+    const spawnEvent = (id, type) => { if(!gameState.spawns[id]) { gameState.spawns[id] = true; let ang = Math.random() * Math.PI * 2; enemies.push(new Enemy(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r, type)); } };
+
+    if (pct >= 0.9) spawnEvent('boss2', 'boss');
+    else if (pct >= 0.6) spawnEvent('elite2', 'elite_blood');
+    else if (pct >= 0.4) spawnEvent('boss1', 'boss');
+    else if (pct >= 0.2) spawnEvent('elite1', 'elite_tree');
+    
+    if (spawnerTimer > spawnRate && enemies.length < 200 && pct < 1.0) {
+        spawnerTimer = 0; let ang = Math.random() * Math.PI * 2; enemies.push(new Enemy(player.x + Math.cos(ang)*r, player.y + Math.sin(ang)*r, 'normal'));
+    }
+
+    projectiles.forEach(p => p.update(dt)); projectiles = projectiles.filter(p => !p.markedForDeath);
+    enemyProjectiles.forEach(p => p.update(dt)); enemyProjectiles = enemyProjectiles.filter(p => !p.markedForDeath);
+    aoeEffects.forEach(a => a.update(dt)); aoeEffects = aoeEffects.filter(a => !a.markedForDeath);
+    enemies.forEach(e => e.update(dt)); enemies = enemies.filter(e => !e.markedForDeath);
+    drops.forEach(d => d.update(dt)); drops = drops.filter(d => !d.markedForDeath);
+    floatTexts.forEach(f => f.update(dt)); floatTexts = floatTexts.filter(f => !f.markedForDeath);
+
+    let rem = Math.max(0, gameState.maxTime - gameState.time); let mins = Math.floor(rem / 60); let secs = Math.floor(rem % 60);
+    UI.timer.innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    UI.stats.innerHTML = `境界: 練氣 ${player.level} 層<br>靈石: ${sessionLoot.stones} | 妖丹: ${sessionLoot.cores} | 玄鐵: ${sessionLoot.irons}<br>氣血: ${Math.floor(player.hp)}/${player.maxHp}`;
+
+    draw(); requestAnimationFrame(update);
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2; let gridSize = 100;
+    let ox = -(gameState.camera.x % gridSize); let oy = -(gameState.camera.y % gridSize);
+    ctx.beginPath();
+    for(let x = ox; x < canvas.width; x += gridSize) { ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); }
+    for(let y = oy; y < canvas.height; y += gridSize) { ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
+    ctx.stroke();
+
+    drops.forEach(d => d.draw(ctx, gameState.camera));
+
+    if(player && player.hp > 0) {
+        let pPos = { x: player.x - gameState.camera.x, y: player.y - gameState.camera.y };
+        ctx.fillStyle = '#3498db'; ctx.beginPath(); ctx.arc(pPos.x, pPos.y, player.radius, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'red'; ctx.fillRect(pPos.x - 15, pPos.y + 20, 30, 4);
+        ctx.fillStyle = '#2ecc71'; ctx.fillRect(pPos.x - 15, pPos.y + 20, 30 * (Math.max(0, player.hp)/player.maxHp), 4);
+    }
+
+    enemies.forEach(e => {
+        let pos = { x: e.x - gameState.camera.x, y: e.y - gameState.camera.y }; ctx.fillStyle = e.color;
+        ctx.beginPath(); ctx.arc(pos.x, pos.y, e.radius, 0, Math.PI*2); ctx.fill();
+        if(e.hp < e.maxHp) { ctx.fillStyle = 'red'; ctx.fillRect(pos.x - 12, pos.y - e.radius - 8, 24, 3); ctx.fillStyle = '#2ecc71'; ctx.fillRect(pos.x - 12, pos.y - e.radius - 8, 24 * (e.hp/e.maxHp), 3); }
+        if(e.status.freeze > 0) { ctx.fillStyle='rgba(116,185,255,0.5)'; ctx.beginPath(); ctx.arc(pos.x, pos.y, e.radius+2, 0, Math.PI*2); ctx.fill(); }
+    });
+
+    projectiles.forEach(p => p.draw(ctx, gameState.camera)); enemyProjectiles.forEach(p => p.draw(ctx, gameState.camera)); aoeEffects.forEach(a => a.draw(ctx, gameState.camera));
+    ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
+    floatTexts.forEach(f => f.draw(ctx, gameState.camera));
+}
+
+function takePlayerDamage(dmg) {
+    player.hp -= dmg; UI.dmgOverlay.style.opacity = 1; setTimeout(() => UI.dmgOverlay.style.opacity = 0, 150);
+    if(player.hp <= 0) { if(sessionLoot.revives > 0) { sessionLoot.revives--; player.hp = player.maxHp; floatTexts.push(new FloatText(player.x, player.y, "九轉還魂!", '#f1c40f')); enemies.forEach(e => { if(Math.hypot(e.x-player.x, e.y-player.y) < 300) e.takeDamage(9999); }); } else gameOver(); }
+}
+
+function triggerLevelUp() {
+    gameState.isRunning = false; UI.levelUpModal.style.display = 'block';
+    const basePool = [
+        { name: '清風劍訣', desc: '提升基礎劍氣傷害與頻率', action: () => player.addWeapon('清風劍氣', 'projectile', 15, 1.0, 'normal', 1) },
+        { name: '八卦劍陣', desc: '周圍大範圍陣法攻擊', action: () => player.addWeapon('八卦劍陣', 'aoe', 20, 3.0, 'normal', 1, 120) },
+        { name: '三昧真火', desc: '發射可點燃敵人的火球', action: () => player.addWeapon('三昧真火', 'projectile', 25, 1.5, 'fire', 2) },
+        { name: '寒冰護盾', desc: '環繞自身的防禦冰劍', action: () => player.addWeapon('玄冰護盾', 'orbit', 10, 0, 'ice', 99, 60) },
+        { name: '九霄雷劫', desc: '彈射閃電，麻痺敵人', action: () => player.addWeapon('九霄雷劫', 'projectile', 18, 1.8, 'lightning', 3) },
+        { name: '幽冥毒沼', desc: '原地留下持續扣血的毒圈', action: () => player.addWeapon('幽冥毒沼', 'aoe', 5, 2.5, 'poison', 1, 80) },
+        { name: '裂空斬', desc: '發射可無限穿透的半月斬', action: () => player.addWeapon('裂空斬', 'projectile', 30, 2.0, 'normal', 99) }
+    ];
+    let options = basePool.sort(() => 0.5 - Math.random()).slice(0, 4); 
+    UI.optionsContainer.innerHTML = '';
+    options.forEach(opt => {
+        let isHigh = Math.random() < 0.2; let finalName = opt.name, finalDesc = opt.desc, actionWrapper = opt.action;
+        if (isHigh) {
+            let af = [{prefix:'[極速]', d: '(減CD)', mod: w=>{w.baseCd*=0.6;}}, {prefix:'[天道]', d: '(雙倍傷)', mod: w=>{w.baseDmg*=2;}}][Math.floor(Math.random()*2)];
+            finalName = af.prefix + finalName; finalDesc += af.d;
+            actionWrapper = () => { opt.action(); let w = player.weapons.find(w=>w.name===opt.name); if(w) af.mod(w); };
+        }
+        let div = document.createElement('div'); div.className = isHigh ? 'card affix-high' : 'card';
+        div.innerHTML = `<div class="card-title">${finalName}</div><div style="font-size:12px; margin-top:5px; color:#aaa;">${finalDesc}</div>`;
+        div.onclick = () => { actionWrapper(); UI.levelUpModal.style.display = 'none'; gameState.lastTime = performance.now(); gameState.isRunning = true; requestAnimationFrame(update); };
+        UI.optionsContainer.appendChild(div);
+    });
+}
+
+function triggerChest() {
+    gameState.isRunning = false; UI.chestModal.style.display = 'block';
+    let rewards = ["獲得 5 顆妖丹與 50 靈石！", "獲得 20 個玄鐵！", "所有武器等級 +1！"];
+    let rIdx = Math.floor(Math.random() * rewards.length); document.getElementById('chest-reward').innerText = rewards[rIdx];
+    if (rIdx === 0) { sessionLoot.cores += 5; sessionLoot.stones += 50; } else if (rIdx === 1) sessionLoot.irons += 20; else player.weapons.forEach(w => w.level++);
+}
+function closeChest() { UI.chestModal.style.display = 'none'; gameState.lastTime = performance.now(); gameState.isRunning = true; requestAnimationFrame(update); }
+
+function togglePause() {
+    if(UI.gameOverModal.style.display==='block' || UI.levelUpModal.style.display==='block' || UI.startModal.style.display==='block' || UI.chestModal.style.display==='block' || UI.hubModal.style.display==='block') return;
+    if(gameState.isRunning) { 
+        gameState.isRunning = false; document.getElementById('pause-stones').innerText = metaData.spiritStones + sessionLoot.stones; 
+        document.getElementById('p-str').innerText = player.stats.str; document.getElementById('p-agi').innerText = player.stats.agi; document.getElementById('p-vit').innerText = player.stats.vit; document.getElementById('p-int').innerText = player.stats.int;
+        UI.pauseModal.style.display = 'block'; 
+    } 
+    else { UI.pauseModal.style.display = 'none'; gameState.lastTime = performance.now(); gameState.isRunning = true; requestAnimationFrame(update); }
+}
+
+function switchPauseTab(tab) {
+    document.querySelectorAll('#pause-modal .nav-tab').forEach(e => e.classList.remove('active')); document.getElementById('ptab-'+tab).classList.add('active');
+    if(tab === 'main') { document.getElementById('pause-content-main').style.display='block'; document.getElementById('pause-content-inv').style.display='none'; }
+    else { 
+        document.getElementById('pause-content-main').style.display='none'; document.getElementById('pause-content-inv').style.display='block';
+        let invHtml = metaData.inventory.map(item => `<div class="grid-item">🎁<span>${item}</span></div>`).join('');
+        document.getElementById('inventory-grid').innerHTML = invHtml || `<div style="grid-column: span 4; color:#777;">行囊空空如也</div>`;
+    }
+}
+
+function gameOver() {
+    if(!gameState.isRunning) return; gameState.isRunning = false; UI.gameOverModal.style.display = 'block';
+    metaData.spiritStones += sessionLoot.stones; metaData.cores += sessionLoot.cores; metaData.irons += sessionLoot.irons;
+    player.weapons.forEach(w => { metaData.mastery[w.name] = (metaData.mastery[w.name] || 0) + w.level; });
+    sessionLoot = {stones:0, cores:0, irons:0, revives:0}; saveMeta();
+    let mins = Math.floor(gameState.time / 60); let secs = Math.floor(gameState.time % 60);
+    document.getElementById('go-stats').innerHTML = `存活時間: ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+let currentHubTab = 'shop';
+function openShop(from, tab='shop') { hubReturnTo = from; UI.startModal.style.display = 'none'; UI.pauseModal.style.display = 'none'; UI.gameOverModal.style.display = 'none'; UI.hubModal.style.display = 'block'; switchHubTab(tab); }
+function closeHub() {
+    UI.hubModal.style.display = 'none';
+    if(hubReturnTo==='start') { document.getElementById('start-stones').innerText = metaData.spiritStones; document.getElementById('start-cores').innerText = metaData.cores; document.getElementById('start-irons').innerText = metaData.irons; UI.startModal.style.display = 'block'; }
+    else if(hubReturnTo==='pause') UI.pauseModal.style.display = 'block'; else UI.gameOverModal.style.display = 'block';
+}
+function switchHubTab(tab) {
+    currentHubTab = tab; document.querySelectorAll('#hub-modal .nav-tab').forEach(e => e.classList.remove('active')); document.getElementById('tab-'+tab).classList.add('active');
+    document.getElementById('hub-stones').innerText = metaData.spiritStones; document.getElementById('hub-cores').innerText = metaData.cores; document.getElementById('hub-irons').innerText = metaData.irons;
+    let html = '';
+    if (tab === 'shop') {
+        shopCatalog.forEach(item => {
+            let current = metaData.baseStats[item.stat]; let btnHTML = current >= item.max ? `<span style="color:#2ecc71">已達上限</span>` : `可購買 (${current}/${item.max})`;
+            html += `<div class="card" onclick="buyShopItem('${item.id}', ${item.cost}, ${item.max}, '${item.stat}')" style="display:flex; justify-content:space-between; align-items:center;">
+                <div><div class="card-title">${item.name}</div><div style="font-size:12px; color:#aaa;">${item.desc}</div></div>
+                <div style="text-align:right;"><div style="color:#f1c40f; font-weight:bold;">${item.cost} 靈石</div><div style="font-size:12px; color:#777;">${btnHTML}</div></div></div>`;
+        });
+    } else if (tab === 'craft') { html = `<div style="text-align:center; color:#777; padding:20px;">神兵坊擴建中...<br>請期待後續版本</div>`; } 
+    else if (tab === 'mastery') {
+        let keys = Object.keys(metaData.mastery); if(keys.length === 0) html = `<div style="text-align:center; color:#777; padding:20px;">尚無武學熟練度<br>請先完成一次修行</div>`;
+        keys.forEach(k => { let lvl = metaData.mastery[k]; html += `<div class="card"><div class="card-title">${k} (Lv.${lvl})</div><div style="font-size:12px; color:#2ecc71;">傷害 +${lvl*2}% / 冷卻 -${Math.floor((1-Math.pow(0.99, lvl))*100)}%</div></div>`; });
+    }
+    document.getElementById('hub-content').innerHTML = html;
+}
+function buyShopItem(id, cost, max, stat) {
+    if (metaData.baseStats[stat] >= max) { alert("已達購買上限！"); return; }
+    let tot = metaData.spiritStones + (hubReturnTo === 'pause' ? sessionLoot.stones : 0);
+    if(tot >= cost) {
+        if(hubReturnTo === 'pause') { if(sessionLoot.stones >= cost) sessionLoot.stones -= cost; else { metaData.spiritStones -= (cost - sessionLoot.stones); sessionLoot.stones = 0; } } else metaData.spiritStones -= cost;
+        metaData.baseStats[stat]++; if(player) player.stats[stat]++; saveMeta(); switchHubTab('shop');
+    } else alert("靈石不足！");
+}
+function saveMeta() { localStorage.setItem('guigu_save_v4', JSON.stringify(metaData)); }
+
+window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; if(VisualEngine3D.isReady){ VisualEngine3D.camera.aspect = window.innerWidth / window.innerHeight; VisualEngine3D.camera.updateProjectionMatrix(); VisualEngine3D.renderer.setSize(window.innerWidth, window.innerHeight); } });
+draw();
+</script>
+</body>
+</html>
