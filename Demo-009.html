@@ -751,6 +751,78 @@ window.GG.monsterArt = {
 // 1. 遊戲全局變數與音效引擎
 const canvas = document.getElementById('gameCanvas'); 
 const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const VisualEngine3D = {
+    isReady: false, scene: null, camera: null, renderer: null, particles: null, pointLights: [],
+    init: function() {
+        if (typeof THREE === 'undefined') return;
+        try {
+            const canvas3d = document.getElementById('bg-3d-canvas');
+            if (!canvas3d) return;
+            this.renderer = new THREE.WebGLRenderer({ canvas: canvas3d, alpha: true, antialias: false });
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            this.scene = new THREE.Scene();
+            this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000); 
+            this.camera.position.z = 50;
+            const geo = new THREE.BufferGeometry(); const pos = [];
+            for (let i = 0; i < 400; i++) { 
+                pos.push(THREE.MathUtils.randFloatSpread(200), THREE.MathUtils.randFloatSpread(200), THREE.MathUtils.randFloatSpread(200)); 
+            }
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            this.particles = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x00f2fe, size: 0.6, transparent: true, opacity: 0.35 }));
+            this.scene.add(this.particles);
+            for(let i=0; i<15; i++) { 
+                let l = new THREE.PointLight(0xffffff, 0, 150); 
+                this.scene.add(l); 
+                this.pointLights.push({light: l, life: 0}); 
+            }
+            this.isReady = true; 
+            this.animate();
+        } catch(e) { this.isReady = false; }
+    },
+    animate: function() {
+        if(!this.isReady) return; 
+        requestAnimationFrame(() => this.animate());
+        if(this.particles) this.particles.rotation.y += 0.001;
+        this.pointLights.forEach(p => { 
+            if(p.life > 0) { 
+                p.life -= 0.05; 
+                p.light.intensity = p.life * 2; 
+            } else { 
+                p.light.intensity = 0; 
+            } 
+        });
+        this.renderer.render(this.scene, this.camera);
+    },
+    spawnEffect: function(x, y, camX, camY, element) {
+        if(!this.isReady) return;
+        let sx = (x - camX - window.innerWidth/2) * 0.1; 
+        let sy = -(y - camY - window.innerHeight/2) * 0.1;
+        let p = this.pointLights.find(l => l.life <= 0);
+        if(p) {
+            p.light.position.set(sx, sy, 0); 
+            p.life = 1.0;
+            if(element === 'fire') p.light.color.setHex(0xff4757); 
+            else if(element === 'ice') p.light.color.setHex(0x74b9ff); 
+            else if(element === 'lightning') p.light.color.setHex(0x9b59b6); 
+            else if(element === 'poison') p.light.color.setHex(0x2ecc71); 
+            else p.light.color.setHex(0xf1c40f);
+        }
+    }
+};
+VisualEngine3D.init();
+
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    if (VisualEngine3D && VisualEngine3D.isReady) {
+        VisualEngine3D.camera.aspect = window.innerWidth / window.innerHeight;
+        VisualEngine3D.camera.updateProjectionMatrix();
+        VisualEngine3D.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+});
 
 const SoundManager = {
     ctx: null, enabled: false,
@@ -776,7 +848,9 @@ const UI = {
     timer: document.getElementById('timer'), 
     joyBase: document.getElementById('joystick-base'), 
     joyStick: document.getElementById('joystick-stick'),
-    autoBtn: document.getElementById('auto-btn')
+    autoBtn: document.getElementById('auto-btn'),
+    dmgOverlay: document.getElementById('damage-overlay'),
+    hitFlashOverlay: document.getElementById('hit-flash-overlay')
 };
 
 // 局內狀態字典 (嚴格隔絕於 GG.state 外)
@@ -2037,7 +2111,7 @@ setTimeout(() => {
 </script>
 </body>
 </html>
-/* [CODE] END: Demo-009 完整結束 */
+<!-- [CODE] END: Demo-009 完整結束 -->
 
 
 
